@@ -24,6 +24,13 @@ from libs.utils import *
 from tool.evaluation.tum_tool.associate import associate, read_file_list
 from tool.evaluation.tum_tool.pose_evaluation_utils import rot2quat
 
+from deep_depth.monodepth2 import networks
+import torch
+from torchvision import transforms
+import PIL.Image as pil
+from deep_depth.monodepth2.layers import transformation_from_parameters
+import sys
+
 
 class VisualOdometry():
     def __init__(self, cfg):
@@ -185,7 +192,8 @@ class VisualOdometry():
             0: "2d-2d",
             1: "3d-2d",
             2: "3d-3d",
-            3: "hybrid"
+            3: "hybrid",
+            4: "dense_depth"
         }
         return tracking_method_cases[method_idx]
 
@@ -194,11 +202,13 @@ class VisualOdometry():
         Args:
             method_idx (int): feature tracking method index
                 - 1: deep_flow
+                - 2: deep_depth
         Returns:
             feat_track_method (str): feature tracking method
         """
         feat_track_methods = {
             1: "deep_flow",
+            2: "deep_depth"
         }
         return feat_track_methods[self.cfg.feature_tracking_method]
 
@@ -299,6 +309,24 @@ class VisualOdometry():
                 dataset=self.cfg.dataset)
         return depth_net
 
+    def initialize_deep_pose_model(self):
+        pose_encoder_path = os.path.join(self.cfg.pose.pretrained_model, "pose_encoder.pth")
+        pose_decoder_path = os.path.join(self.cfg.pose.pretrained_model, "pose.pth")
+
+        pose_encoder = networks.ResnetEncoder(self.cfg.pose.num_layers, False, 2)
+        pose_encoder.load_state_dict(torch.load(pose_encoder_path))
+
+        pose_decoder = networks.PoseDecoder(pose_encoder.num_ch_enc, 1, 2)
+        pose_decoder.load_state_dict(torch.load(pose_decoder_path))
+
+        pose_encoder.cuda()
+        pose_encoder.eval()
+        pose_decoder.cuda()
+        pose_decoder.eval()
+
+        return pose_encoder, pose_decoder
+
+
     def get_gt_poses(self):
         """load ground-truth poses
         Returns:
@@ -373,6 +401,14 @@ class VisualOdometry():
                 self.deep_models['depth'] = self.initialize_deep_depth_model()
             else:
                 assert False, "No precomputed depths nor pretrained depth model"
+
+        # posenet
+        if self.feature_tracking_method == "deep_depth":
+            if self.cfg.pose.pretrained_model is not None:
+                self.deep_models['pose_encoder'], self.deep_models['pose_decoder'] \
+                    = self.initialize_deep_pose_model()
+            else:
+                assert False, "No precomputed pose nor pretrained pose model"
 
         # Load GT pose
         self.gt_poses = self.get_gt_poses()
@@ -799,6 +835,67 @@ class VisualOdometry():
             del(ref_data)
             del(cur_data)
 
+    def tracking_depth(self):
+        """Tracking using depth and optimize photometric reprojection error
+        """
+        # First frame
+        if self.tracking_stage == 0:
+            # initial
+            self.cur_data['pose'] = SE3(self.gt_poses[self.cur_data['id']])
+            self.tracking_stage = 1
+            return
+
+        # Second to last frames
+        elif self.tracking_stage >= 1:
+            # cur_data (img, depth); ref_data(img, depth)
+            # img: 370 * 1226 * 3
+            for ref_id in self.ref_data['id']:
+                inputs_ref = copy.deepcopy(self.ref_data['img'][ref_id])
+                inputs_cur = copy.deepcopy(self.cur_data['img'])
+
+                # step1: calculating initial guess : R, t, D (ref_data['pose'])
+                with torch.no_grad():
+                    # Preprocess
+                    inputs_ref = pil.fromarray(inputs_ref)
+                    inputs_ref = transforms.ToTensor()(inputs_ref).unsqueeze(0)
+                    inputs_cur = pil.fromarray(inputs_cur)
+                    inputs_cur = transforms.ToTensor()(inputs_cur).unsqueeze(0)
+
+                    # Prediction
+                    inputs_ref = inputs_ref.cuda()
+                    inputs_cur = inputs_cur.cuda()
+
+                    # Compose hybrid pose
+                    hybrid_pose = SE3()
+
+                    all_inputs = torch.cat([inputs_ref, inputs_cur], 1)
+
+                    features = [self.deep_models['pose_encoder'](all_inputs)]
+                    axisangle, translation = self.deep_models['pose_decoder'](features)
+
+                    hybrid_pose.pose = transformation_from_parameters(
+                        axisangle[:, 0], translation[:, 0]).cpu().numpy().reshape(4, 4)
+
+                    # translation scale from triangulation v.s. CNN-depth
+                    # if np.linalg.norm(hybrid_pose.t) != 0:
+                    #     scale = self.find_scale_from_depth(
+                    #         self.cur_data[self.cfg.translation_scale.kp_src],
+                    #         self.ref_data[self.cfg.translation_scale.kp_src][ref_id],
+                    #         hybrid_pose.inv_pose, self.cur_data['depth']
+                    #     )
+                    #     if scale != -1:
+                    #         hybrid_pose.t = E_pose.t * scale
+
+                self.ref_data['pose'][ref_id] = copy.deepcopy(hybrid_pose)
+
+                # step 2: optimization R, t, D: minimize reprojection error
+
+            # step 3: update global pose and cur_data['pose']
+            pose = self.ref_data['pose'][self.ref_data['id'][-1]]
+            self.update_global_pose(pose, 1)
+
+            self.tracking_stage += 1
+
     def update_ref_data(self, ref_data, cur_data, window_size, kf_step=1):
         """Update reference data
         Args:
@@ -993,6 +1090,8 @@ class VisualOdometry():
             start_time = time()
             if self.tracking_method == "hybrid":
                 self.tracking_hybrid()
+            elif self.tracking_method == "dense_depth":
+                self.tracking_depth()
             else:
                 raise NotImplementedError
             self.timers.timers["tracking"].append(time()-start_time)
