@@ -5,6 +5,7 @@
 
 .vscode
 .idea
+.DS_Store
 
 result/
 dataset/

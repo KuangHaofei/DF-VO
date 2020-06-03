@@ -32,6 +32,36 @@ from deep_depth.monodepth2.layers import transformation_from_parameters
 import sys
 
 
+def feature_matching(img1, img2):
+    # feature detection
+    orb = cv2.ORB_create()
+
+    kp1, des1 = orb.detectAndCompute(img1, None)
+    kp2, des2 = orb.detectAndCompute(img2, None)
+
+    # feature matching
+    # BFMatcher with default params
+    bf = cv2.BFMatcher()
+    matches = bf.knnMatch(des1, des2, k=2)
+
+    # Apply ratio test
+    good = []
+    pts1 = []
+    pts2 = []
+
+    for m, n in matches:
+        if m.distance < 0.75 * n.distance:
+            good.append([m])
+            pts2.append(kp2[m.trainIdx].pt)
+            pts1.append(kp1[m.queryIdx].pt)
+
+    # generate correspondences
+    pts1 = np.int32(pts1)
+    pts2 = np.int32(pts2)
+
+    return pts1, pts2
+
+
 class VisualOdometry():
     def __init__(self, cfg):
         """
@@ -853,6 +883,9 @@ class VisualOdometry():
                 inputs_ref = copy.deepcopy(self.ref_data['img'][ref_id])
                 inputs_cur = copy.deepcopy(self.cur_data['img'])
 
+                # feature matching
+                kp_ref, kp_cur = feature_matching(inputs_ref, inputs_cur)
+
                 # step1: calculating initial guess : R, t, D (ref_data['pose'])
                 with torch.no_grad():
                     # Preprocess
@@ -877,14 +910,14 @@ class VisualOdometry():
                         axisangle[:, 0], translation[:, 0]).cpu().numpy().reshape(4, 4)
 
                     # translation scale from triangulation v.s. CNN-depth
-                    # if np.linalg.norm(hybrid_pose.t) != 0:
-                    #     scale = self.find_scale_from_depth(
-                    #         self.cur_data[self.cfg.translation_scale.kp_src],
-                    #         self.ref_data[self.cfg.translation_scale.kp_src][ref_id],
-                    #         hybrid_pose.inv_pose, self.cur_data['depth']
-                    #     )
-                    #     if scale != -1:
-                    #         hybrid_pose.t = E_pose.t * scale
+                    if np.linalg.norm(hybrid_pose.t) != 0:
+                        scale = self.find_scale_from_depth(
+                            kp_cur,
+                            kp_ref,
+                            hybrid_pose.inv_pose, self.cur_data['depth']
+                        )
+                        if scale != -1:
+                            hybrid_pose.t = hybrid_pose.t * scale
 
                 self.ref_data['pose'][ref_id] = copy.deepcopy(hybrid_pose)
 
