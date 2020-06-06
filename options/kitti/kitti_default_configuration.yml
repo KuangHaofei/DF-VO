@@ -4,20 +4,21 @@
 dataset: kitti
 seed: 4869
 image:
-  height: 370
-  width: 1226
+  height: 192
+  width: 640
   ext: png
 seq: "10"
-result_dir: result/tmp/master/10
+result_dir: result/tmp/scale/10
 
 # ----------------------------------------------------------------------------
 # tracking options
 # ----------------------------------------------------------------------------
-feature_tracking_method: 1
+feature_tracking_method: 2
   # 1: deep optical flow
+  # 2: deep depth
 
-tracking_method: 3 
-  # 3: hybrid
+tracking_method: 4
+  # 4: dense_depth
 
 compute_2d2d_pose:
   ransac:
@@ -25,7 +26,7 @@ compute_2d2d_pose:
     repeat: 5
   validity:
     method: flow+chei
-    min_flow: 5 
+    min_flow: 5
 
 PnP:
   ransac:
@@ -52,6 +53,10 @@ depth:
   min_depth: 0
   pretrained_model: model_zoo/depth/kitti_odom/stereo/
 
+pose:
+  num_layers: 18
+  pretrained_model: model_zoo/pose/mono+stereo_640x192/
+
 # ----------------------------------------------------------------------------
 # Deep Optical Flow
 # ----------------------------------------------------------------------------
@@ -59,11 +64,11 @@ deep_flow:
   forward_backward: True
   num_kp: 2000
   kp_sel_method: bestN
-  network: liteflow  
+  network: liteflow
     # liteflow: LiteFlowNet
   flow_net_weight: model_zoo/optical_flow/LiteFlowNet/network-default.pytorch
   batch_size: 1
-  precomputed_flow: 
+  precomputed_flow:
 
 crop:
   depth_crop: [[0.3, 1], [0, 1]]
@@ -76,13 +81,13 @@ visualization:
   window_h: 900
   window_w: 1500
   save_img: False
-  flow: 
-    vis_full_flow: True
-    vis_back_flow: True
-    vis_flow_diff: True
+  flow:
+    vis_full_flow: False
+    vis_back_flow: False
+    vis_flow_diff: False
   match:
     kp_num: 50  # -1 for using all
-    vis_type: 2
+    vis_type: None
       # None: None
       # 0: draw_match_2_side
       # 1: draw_match_temporal
