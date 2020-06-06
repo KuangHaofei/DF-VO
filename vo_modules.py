@@ -29,37 +29,8 @@ import torch
 from torchvision import transforms
 import PIL.Image as pil
 from deep_depth.monodepth2.layers import transformation_from_parameters
-import sys
-
-
-def feature_matching(img1, img2):
-    # feature detection
-    orb = cv2.ORB_create()
-
-    kp1, des1 = orb.detectAndCompute(img1, None)
-    kp2, des2 = orb.detectAndCompute(img2, None)
-
-    # feature matching
-    # BFMatcher with default params
-    bf = cv2.BFMatcher()
-    matches = bf.knnMatch(des1, des2, k=2)
-
-    # Apply ratio test
-    good = []
-    pts1 = []
-    pts2 = []
-
-    for m, n in matches:
-        if m.distance < 0.75 * n.distance:
-            good.append([m])
-            pts2.append(kp2[m.trainIdx].pt)
-            pts1.append(kp1[m.queryIdx].pt)
-
-    # generate correspondences
-    pts1 = np.int32(pts1)
-    pts2 = np.int32(pts2)
-
-    return pts1, pts2
+from scipy.optimize import least_squares
+import random
 
 
 class VisualOdometry():
@@ -880,11 +851,12 @@ class VisualOdometry():
             # cur_data (img, depth); ref_data(img, depth)
             # img: 370 * 1226 * 3
             for ref_id in self.ref_data['id']:
-                inputs_ref = copy.deepcopy(self.ref_data['img'][ref_id])
-                inputs_cur = copy.deepcopy(self.cur_data['img'])
+                img_ref = copy.deepcopy(self.ref_data['img'][ref_id])
+                img_cur = copy.deepcopy(self.cur_data['img'])
+                depth_cur = copy.deepcopy(self.cur_data['depth'])
 
-                # feature matching
-                kp_ref, kp_cur = feature_matching(inputs_ref, inputs_cur)
+                inputs_ref = copy.deepcopy(img_ref)
+                inputs_cur = copy.deepcopy(img_cur)
 
                 # step1: calculating initial guess : R, t, D (ref_data['pose'])
                 with torch.no_grad():
@@ -909,20 +881,97 @@ class VisualOdometry():
                     hybrid_pose.pose = transformation_from_parameters(
                         axisangle[:, 0], translation[:, 0]).cpu().numpy().reshape(4, 4)
 
-                    # translation scale from triangulation v.s. CNN-depth
-                    if np.linalg.norm(hybrid_pose.t) != 0:
-                        scale = self.find_scale_from_depth(
-                            kp_cur,
-                            kp_ref,
-                            hybrid_pose.inv_pose, self.cur_data['depth']
-                        )
-                        if scale != -1:
-                            hybrid_pose.t = hybrid_pose.t * scale
+                # step 2: optimization R, t, D: minimize reprojection error
+                def fit_func(R, t, D, x_cur, K):
+                    """fit function: reprojection from cur image plane to ref image plane
+                    Args:
+                        R (3x3 array): rotation from cur to ref
+                        t (3x1 array): translation form cur to ref
+                        D (Nx1 array): valid depth map of cur
+                        K (Intrinsics): camera intrinsic
+                        x_cur (Nx2 array): all pixels of cur
+
+                    Returns:
+                        x_ref (Nx2 array): all pixels of ref
+                    """
+                    x = np.c_[x_cur, np.ones(x_cur.shape[0])]
+                    x = np.dot(R, np.dot(K.inv_mat, x.T) * D) + t
+
+                    x_ref = np.dot(K.mat, x)
+                    x_ref = x_ref / x_ref[2]
+                    x_ref = np.int32(x_ref[:2].T)
+
+                    # common mask filtering
+                    mask_u_left = (x_ref[:, 0] >= 0)
+                    mask_u_right = (x_ref[:, 0] < 640)
+                    mask_v_left = (x_ref[:, 1] >= 0)
+                    mask_v_right = (x_ref[:, 1] < 192)
+                    mask = mask_u_left * mask_u_right * mask_v_left * mask_v_right
+                    x_ref = x_ref[mask]
+                    x_cur = x_cur[mask]
+
+                    # downsample
+                    samples = random.sample(range(x_cur.shape[0]), 2000)
+                    x_ref = x_ref[samples]
+                    x_cur = x_cur[samples]
+
+                    return x_ref, x_cur
+
+                def error_func(params, img_ref, img_cur, x_cur, depth_cur, K):
+                    R, _ = cv2.Rodrigues(params[:3].reshape(3, 1))
+                    t = params[3:].reshape(3, 1)
+
+                    # new x_ref, x_cur
+                    x_ref, x_cur = fit_func(R, t, depth_cur, x_cur, K)
+
+                    # photometric error
+                    error = []
+                    for i in range(x_cur.shape[0]):
+                        error.append(img_ref[x_ref[i]] - img_cur[x_cur[i]])
+
+                    error = np.array(error)
+                    ret = error.ravel()
+
+                    return ret
+
+                # raw img to grayscale
+                img_ref = cv2.cvtColor(img_ref, cv2.COLOR_RGB2GRAY)
+                img_cur = cv2.cvtColor(img_cur, cv2.COLOR_RGB2GRAY)
+
+                # opencv coordinate to image cooridinate
+                # HxW => WxH
+                # img_ref = cv2.resize(img_ref, (0, 0), fx=0.25, fy=0.25, interpolation=cv2.INTER_LINEAR)
+                # img_cur = cv2.resize(img_cur, (0, 0), fx=0.25, fy=0.25, interpolation=cv2.INTER_LINEAR)
+                # depth_cur = cv2.resize(depth_cur, (0, 0), fx=0.25, fy=0.25, interpolation=cv2.INTER_LINEAR)
+
+                img_ref = img_ref.T.astype(np.float)
+                img_cur = img_cur.T.astype(np.float)
+                depth_cur = depth_cur.T.astype(np.float)
+
+                # generate x_cur
+                x_cur = np.array(np.where(img_cur)).T
+                depth_cur = depth_cur.reshape(-1)
+                mask_d = depth_cur > 0
+                depth_cur = depth_cur[mask_d]
+                x_cur = x_cur[mask_d]
+
+                r, _ = cv2.Rodrigues(hybrid_pose.R)
+
+                params_init = [r, hybrid_pose.t]
+                params_init = np.array(params_init).reshape(-1)
+
+                tic = time()
+                res = least_squares(error_func, x0=params_init, loss='soft_l1', f_scale=0.1, verbose=0,
+                                    args=(img_ref, img_cur, x_cur, depth_cur, self.cam_intrinsics))
+                print(time() - tic)
+                results = (res.x)
+                R, _ = cv2.Rodrigues(results[:3].reshape(3, 1))
+                t = results[3:].reshape(3, 1)
+
+                hybrid_pose.R = R
+                hybrid_pose.t = t
 
                 self.ref_data['pose'][ref_id] = copy.deepcopy(hybrid_pose)
-
-                # step 2: optimization R, t, D: minimize reprojection error
-
             # step 3: update global pose and cur_data['pose']
             pose = self.ref_data['pose'][self.ref_data['id'][-1]]
             self.update_global_pose(pose, 1)
