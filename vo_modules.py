@@ -776,7 +776,7 @@ class VisualOdometry():
                         = self.compute_pose_3d2d(
                                     cur_data[self.cfg.PnP.kp_src],
                                     ref_data[self.cfg.PnP.kp_src][ref_id],
-                                    ref_data['depth'][ref_id]
+                                    cur_data['depth']
                                     ) # pose: from cur->ref
                     # use PnP pose instead of E-pose
                     hybrid_pose = pnp_pose

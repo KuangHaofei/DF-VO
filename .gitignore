@@ -12,3 +12,5 @@ model_zoo/
 # temporary files
 tmp/
 
+.idea
+.DS_Store
