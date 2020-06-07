@@ -294,7 +294,7 @@ class KittiEvalOdom():
             pos_xz = np.asarray(pos_xz)
             plt.plot(pos_xz[:, 0],  pos_xz[:, 1], label=key)
 
-        plt.legend(loc="upper right", prop={'size': fontsize_})
+        plt.legend()
         plt.xticks(fontsize=fontsize_)
         plt.yticks(fontsize=fontsize_)
         plt.xlabel('x (m)', fontsize=fontsize_)
