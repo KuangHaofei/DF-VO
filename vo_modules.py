@@ -684,8 +684,8 @@ class VisualOdometry():
         for i in range(num_forward):
             # Read precomputed flow / real-time flow
             batch_kp_ref_best, batch_kp_cur_best, batch_kp_ref_regular, batch_kp_cur_regular, batch_flows = flow_net_tracking(
-                                    img1=ref_imgs[i*batch_size: (i+1)*batch_size],
-                                    img2=cur_imgs[i*batch_size: (i+1)*batch_size],
+                                    img1=cur_imgs[i * batch_size: (i + 1) * batch_size],
+                                    img2=ref_imgs[i*batch_size: (i+1)*batch_size],
                                     kp_list=kp_list_regular,
                                     img_crop=self.cfg.crop.flow_crop,
                                     flow_dir=self.cfg.deep_flow.precomputed_flow,
