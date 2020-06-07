@@ -947,7 +947,7 @@ class VisualOdometry():
         # Main
         print("==> Start VO")
         main_start_time = time()
-        start_frame = int(input("Start with frame: "))
+        start_frame = 0  # int(input("Start with frame: "))
 
         for img_id in tqdm(range(start_frame, len_seq)):
             self.tracking_mode = "Ess. Mat."
