@@ -194,11 +194,13 @@ class VisualOdometry():
         Args:
             method_idx (int): feature tracking method index
                 - 1: deep_flow
+                - 2: sift
         Returns:
             feat_track_method (str): feature tracking method
         """
         feat_track_methods = {
             1: "deep_flow",
+            2: "sift"
         }
         return feat_track_methods[self.cfg.feature_tracking_method]
 
@@ -298,6 +300,33 @@ class VisualOdometry():
                 weight_path=self.cfg.depth.pretrained_model,
                 dataset=self.cfg.dataset)
         return depth_net
+
+    def feature_matching(img1, img2):
+        # Initiate SIFT detector
+        sift = cv2.xfeatures2d.SIFT_create()
+
+        # find the keypoints and descriptors with SIFT
+        kp1, des1 = sift.detectAndCompute(img1, None)
+        kp2, des2 = sift.detectAndCompute(img2, None)
+
+        # BFMatcher with default params
+        bf = cv2.BFMatcher()
+        matches = bf.knnMatch(des1, des2, k=2)
+
+        # Apply ratio test
+        pts1 = []
+        pts2 = []
+
+        for m, n in matches:
+            if m.distance < 0.5 * n.distance:
+                pts2.append(kp2[m.trainIdx].pt)
+                pts1.append(kp1[m.queryIdx].pt)
+
+        # generate correspondences
+        pts1 = np.int32(pts1)
+        pts2 = np.int32(pts2)
+
+        return pts1, pts2
 
     def get_gt_poses(self):
         """load ground-truth poses
@@ -942,7 +971,7 @@ class VisualOdometry():
         # Main
         print("==> Start VO")
         main_start_time = time()
-        start_frame = int(input("Start with frame: "))
+        start_frame = 0  # int(input("Start with frame: "))
 
         for img_id in tqdm(range(start_frame, len_seq)):
             self.tracking_mode = "Ess. Mat."

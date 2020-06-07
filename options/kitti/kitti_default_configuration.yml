@@ -13,8 +13,9 @@ result_dir: result/tmp/master/10
 # ----------------------------------------------------------------------------
 # tracking options
 # ----------------------------------------------------------------------------
-feature_tracking_method: 1
+feature_tracking_method: 2
   # 1: deep optical flow
+  # 2: sift
 
 tracking_method: 3 
   # 3: hybrid
