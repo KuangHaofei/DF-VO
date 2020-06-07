@@ -286,7 +286,7 @@ class FrameDrawer():
                 (vo.cfg.visualization.match.vis_type == 0 or\
                  vo.cfg.visualization.match.vis_type == 2):
                 # Set keypoints
-                if vo.feature_tracking_method == "deep_flow":
+                if True:  # vo.feature_tracking_method == "deep_flow":
                     vis_kp_ref = vo.ref_data['kp'][ref_id][0:-1:1]
                     vis_kp_cur = vo.cur_data['kp'][0:-1:1]
                 vis_match_side = draw_match_2_side(

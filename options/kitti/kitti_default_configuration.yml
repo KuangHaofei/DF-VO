@@ -8,7 +8,7 @@ image:
   width: 1226
   ext: png
 seq: "10"
-result_dir: result/tmp/master/10
+result_dir: result/tmp/features/10
 
 # ----------------------------------------------------------------------------
 # tracking options
@@ -16,6 +16,7 @@ result_dir: result/tmp/master/10
 feature_tracking_method: 2
   # 1: deep optical flow
   # 2: sift
+  # 3: orb
 
 tracking_method: 3 
   # 3: hybrid
@@ -25,7 +26,7 @@ compute_2d2d_pose:
     reproj_thre: 0.2
     repeat: 5
   validity:
-    method: flow+chei
+    method: homo_ratio
     min_flow: 5 
 
 PnP:
@@ -33,7 +34,7 @@ PnP:
     iter: 1000
     reproj_thre: 1
     repeat: 5
-  kp_src: kp_list # [kp_list, kp_best]
+  kp_src: kp_best # [kp_list, kp_best]
 
 # translation scale
 translation_scale:
@@ -42,7 +43,7 @@ translation_scale:
     max_trials: 100
     stop_prob: 0.99
     thre: 1
-  kp_src: kp_list # [kp_list, kp_best]
+  kp_src: kp_best # [kp_list, kp_best]
 
 # ----------------------------------------------------------------------------
 # Deep single-view depth
@@ -78,9 +79,9 @@ visualization:
   window_w: 1500
   save_img: False
   flow: 
-    vis_full_flow: True
-    vis_back_flow: True
-    vis_flow_diff: True
+    vis_full_flow: False
+    vis_back_flow: False
+    vis_flow_diff: False
   match:
     kp_num: 50  # -1 for using all
     vis_type: 2

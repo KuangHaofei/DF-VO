@@ -200,7 +200,8 @@ class VisualOdometry():
         """
         feat_track_methods = {
             1: "deep_flow",
-            2: "sift"
+            2: "sift",
+            3: "orb"
         }
         return feat_track_methods[self.cfg.feature_tracking_method]
 
@@ -301,13 +302,23 @@ class VisualOdometry():
                 dataset=self.cfg.dataset)
         return depth_net
 
-    def feature_matching(img1, img2):
-        # Initiate SIFT detector
-        sift = cv2.xfeatures2d.SIFT_create()
+    def feature_matching(self, img1, img2):
+        if self.feature_tracking_method == "sift":
+            # Initiate SIFT detector
+            sift = cv2.xfeatures2d.SIFT_create()
 
-        # find the keypoints and descriptors with SIFT
-        kp1, des1 = sift.detectAndCompute(img1, None)
-        kp2, des2 = sift.detectAndCompute(img2, None)
+            # find the keypoints and descriptors with SIFT
+            kp1, des1 = sift.detectAndCompute(img1, None)
+            kp2, des2 = sift.detectAndCompute(img2, None)
+
+            arg_dist = 0.5
+        elif self.feature_tracking_method == "orb":
+            # feature detection
+            orb = cv2.ORB_create()
+
+            kp1, des1 = orb.detectAndCompute(img1, None)
+            kp2, des2 = orb.detectAndCompute(img2, None)
+            arg_dist = 0.75
 
         # BFMatcher with default params
         bf = cv2.BFMatcher()
@@ -318,7 +329,7 @@ class VisualOdometry():
         pts2 = []
 
         for m, n in matches:
-            if m.distance < 0.5 * n.distance:
+            if m.distance < arg_dist * n.distance:
                 pts2.append(kp2[m.trainIdx].pt)
                 pts1.append(kp1[m.queryIdx].pt)
 
@@ -485,7 +496,6 @@ class VisualOdometry():
                             prob=0.99,
                             threshold=self.cfg.compute_2d2d_pose.ransac.reproj_thre,
                             )
-                
                 # check homography inlier ratio
                 if valid_cfg.method == "homo_ratio":
                     # Find homography
@@ -498,13 +508,11 @@ class VisualOdometry():
                                 )
                     H_inliers_ratio = H_inliers.sum()/(H_inliers.sum()+inliers.sum())
                     valid_case = H_inliers_ratio < 0.25
-                
                 if valid_case:
                     cheirality_cnt, R, t, _ = cv2.recoverPose(E, new_kp_cur, new_kp_ref,
                                             focal=self.cam_intrinsics.fx,
                                             pp=principal_points,)
                     self.timers.timers["Ess. Mat."].append(time()-start_time)
-                    
                     # check best inlier cnt
                     if valid_cfg.method == "flow+chei":
                         inlier_check = inliers.sum() > best_inlier_cnt and cheirality_cnt > 50
@@ -577,7 +585,7 @@ class VisualOdometry():
             new_XYZ = XYZ_kp1.copy()[new_list]
             new_kp2 = kp2.copy()[new_list]
 
-            if new_kp2.shape[0] > 4:
+            if new_kp2.shape[0] > 5:
                 flag, r, t, inlier = cv2.solvePnPRansac(
                     objectPoints=new_XYZ,
                     imagePoints=new_kp2,
@@ -771,11 +779,13 @@ class VisualOdometry():
         elif self.tracking_stage >= 1:
             # Flow-net for 2D-2D correspondence
             start_time = time()
-            cur_data, ref_data = self.deep_flow_forward(
-                                        self.cur_data,
-                                        self.ref_data,
-                                        forward_backward=self.cfg.deep_flow.forward_backward)
+            for ref_id in self.ref_data['id']:
+                pts_cur, pts_ref = self.feature_matching(
+                    self.cur_data['img'], self.ref_data['img'][ref_id])
+                self.cur_data['kp_best'] = pts_cur.astype(np.float)
+                self.ref_data['kp_best'][ref_id] = pts_ref.astype(np.float)
             self.timers.timers['Flow-CNN'].append(time()-start_time)
+            # print('features: ', time() - start_time)
 
             for ref_id in self.ref_data['id']:
                 # Compose hybrid pose
@@ -783,50 +793,52 @@ class VisualOdometry():
 
                 # FIXME: add if statement for deciding which kp to use
                 # Essential matrix pose
+                # tic = time()
                 E_pose, _ = self.compute_pose_2d2d(
-                                cur_data['kp_best'],
-                                ref_data['kp_best'][ref_id]) # pose: from cur->ref
+                    self.ref_data['kp_best'][ref_id],
+                    self.cur_data['kp_best']) # pose: from cur->ref
+                # print('2d2d: ', time() - tic)
 
                 # Rotation
                 hybrid_pose.R = E_pose.R
 
                 # translation scale from triangulation v.s. CNN-depth
+                # tic = time()
                 if np.linalg.norm(E_pose.t) != 0:
                     scale = self.find_scale_from_depth(
-                        cur_data[self.cfg.translation_scale.kp_src], ref_data[self.cfg.translation_scale.kp_src][ref_id],
+                        self.ref_data[self.cfg.translation_scale.kp_src][ref_id],
+                        self.cur_data[self.cfg.translation_scale.kp_src],
                         E_pose.inv_pose, self.cur_data['depth']
                     )
                     if scale != -1:
                         hybrid_pose.t = E_pose.t * scale
-
+                # print('scale: ', time() - tic)
+                # tic = time()
                 # PnP if Essential matrix fail
                 if np.linalg.norm(E_pose.t) == 0 or scale == -1:
                     pnp_pose, _, _ \
                         = self.compute_pose_3d2d(
-                                    cur_data[self.cfg.PnP.kp_src],
-                                    ref_data[self.cfg.PnP.kp_src][ref_id],
-                                    cur_data['depth']
+                                    self.cur_data[self.cfg.PnP.kp_src],
+                                    self.ref_data[self.cfg.PnP.kp_src][ref_id],
+                                    self.cur_data['depth']
                                     ) # pose: from cur->ref
                     # use PnP pose instead of E-pose
                     hybrid_pose = pnp_pose
                     self.tracking_mode = "PnP"
-                ref_data['pose'][ref_id] = copy.deepcopy(hybrid_pose)
+                self.ref_data['pose'][ref_id] = copy.deepcopy(hybrid_pose)
                 # ref_data['pose'][ref_id] = hybrid_pose
-
-            self.ref_data = copy.deepcopy(ref_data)
-            self.cur_data = copy.deepcopy(cur_data)
+                # print('3d2d: ', time() - tic)
+                # print("======================")
 
             # copy keypoint for visualization
-            self.ref_data['kp'] = copy.deepcopy(ref_data['kp_best'])
-            self.cur_data['kp'] = copy.deepcopy(cur_data['kp_best'])
+            self.ref_data['kp'] = copy.deepcopy(self.ref_data['kp_best'])
+            self.cur_data['kp'] = copy.deepcopy(self.cur_data['kp_best'])
             
             # update global poses
             pose = self.ref_data['pose'][self.ref_data['id'][-1]]
             self.update_global_pose(pose, 1)
 
             self.tracking_stage += 1
-            del(ref_data)
-            del(cur_data)
 
     def update_ref_data(self, ref_data, cur_data, window_size, kf_step=1):
         """Update reference data
