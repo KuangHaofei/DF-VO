@@ -754,9 +754,13 @@ class VisualOdometry():
 
                 # FIXME: add if statement for deciding which kp to use
                 # Essential matrix pose
+                # E_pose, _ = self.compute_pose_2d2d(
+                #                 cur_data['kp_best'],
+                #                 ref_data['kp_best'][ref_id]) # pose: from cur->ref
+
                 E_pose, _ = self.compute_pose_2d2d(
-                                cur_data['kp_best'],
-                                ref_data['kp_best'][ref_id]) # pose: from cur->ref
+                    ref_data['kp_best'][ref_id],
+                    cur_data['kp_best'])  # pose: from cur->ref
 
                 # Rotation
                 hybrid_pose.R = E_pose.R
@@ -764,7 +768,8 @@ class VisualOdometry():
                 # translation scale from triangulation v.s. CNN-depth
                 if np.linalg.norm(E_pose.t) != 0:
                     scale = self.find_scale_from_depth(
-                        cur_data[self.cfg.translation_scale.kp_src], ref_data[self.cfg.translation_scale.kp_src][ref_id],
+                        ref_data[self.cfg.translation_scale.kp_src][ref_id],
+                        cur_data[self.cfg.translation_scale.kp_src],
                         E_pose.inv_pose, self.cur_data['depth']
                     )
                     if scale != -1:
