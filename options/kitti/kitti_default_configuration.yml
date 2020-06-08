@@ -7,8 +7,8 @@ image:
   height: 370
   width: 1226
   ext: png
-seq: "10"
-result_dir: result/tmp/master/10
+seq: "05"
+result_dir: result/tmp/master/05
 
 # ----------------------------------------------------------------------------
 # tracking options
@@ -32,7 +32,7 @@ PnP:
     iter: 1000
     reproj_thre: 1
     repeat: 5
-  kp_src: kp_best # [kp_list, kp_best]
+  kp_src: kp_list # [kp_list, kp_best]
 
 # translation scale
 translation_scale:
@@ -41,7 +41,7 @@ translation_scale:
     max_trials: 100
     stop_prob: 0.99
     thre: 1
-  kp_src: kp_best # [kp_list, kp_best]
+  kp_src: kp_list # [kp_list, kp_best]
 
 # ----------------------------------------------------------------------------
 # Deep single-view depth

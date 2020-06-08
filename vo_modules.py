@@ -684,8 +684,8 @@ class VisualOdometry():
         for i in range(num_forward):
             # Read precomputed flow / real-time flow
             batch_kp_ref_best, batch_kp_cur_best, batch_kp_ref_regular, batch_kp_cur_regular, batch_flows = flow_net_tracking(
-                                    img1=cur_imgs[i * batch_size: (i + 1) * batch_size],
-                                    img2=ref_imgs[i*batch_size: (i+1)*batch_size],
+                                    img1=ref_imgs[i*batch_size: (i+1)*batch_size],
+                                    img2=cur_imgs[i * batch_size: (i + 1) * batch_size],
                                     kp_list=kp_list_regular,
                                     img_crop=self.cfg.crop.flow_crop,
                                     flow_dir=self.cfg.deep_flow.precomputed_flow,
@@ -754,13 +754,13 @@ class VisualOdometry():
 
                 # FIXME: add if statement for deciding which kp to use
                 # Essential matrix pose
-                # E_pose, _ = self.compute_pose_2d2d(
-                #                 cur_data['kp_best'],
-                #                 ref_data['kp_best'][ref_id]) # pose: from cur->ref
-
                 E_pose, _ = self.compute_pose_2d2d(
-                    ref_data['kp_best'][ref_id],
-                    cur_data['kp_best'])  # pose: from cur->ref
+                                cur_data['kp_best'],
+                                ref_data['kp_best'][ref_id]) # pose: from cur->ref
+
+                # E_pose, _ = self.compute_pose_2d2d(
+                #     ref_data['kp_best'][ref_id],
+                #     cur_data['kp_best'])  # pose: from cur->ref
 
                 # Rotation
                 hybrid_pose.R = E_pose.R
@@ -768,10 +768,16 @@ class VisualOdometry():
                 # translation scale from triangulation v.s. CNN-depth
                 if np.linalg.norm(E_pose.t) != 0:
                     scale = self.find_scale_from_depth(
-                        ref_data[self.cfg.translation_scale.kp_src][ref_id],
                         cur_data[self.cfg.translation_scale.kp_src],
+                        ref_data[self.cfg.translation_scale.kp_src][ref_id],
                         E_pose.inv_pose, self.cur_data['depth']
                     )
+                # if np.linalg.norm(E_pose.t) != 0:
+                #     scale = self.find_scale_from_depth(
+                #         ref_data[self.cfg.translation_scale.kp_src][ref_id],
+                #         cur_data[self.cfg.translation_scale.kp_src],
+                #         E_pose.inv_pose, self.cur_data['depth']
+                #     )
                     if scale != -1:
                         hybrid_pose.t = E_pose.t * scale
 
@@ -783,6 +789,12 @@ class VisualOdometry():
                                     ref_data[self.cfg.PnP.kp_src][ref_id],
                                     cur_data['depth']
                                     ) # pose: from cur->ref
+                    # pnp_pose, _, _ \
+                    #     = self.compute_pose_3d2d(
+                    #                 ref_data[self.cfg.PnP.kp_src][ref_id],
+                    #                 cur_data[self.cfg.PnP.kp_src],
+                    #                 ref_data['depth'][ref_id]
+                    #                 ) # pose: from cur->ref
                     # use PnP pose instead of E-pose
                     hybrid_pose = pnp_pose
                     self.tracking_mode = "PnP"
@@ -947,7 +959,7 @@ class VisualOdometry():
         # Main
         print("==> Start VO")
         main_start_time = time()
-        start_frame = 0  # int(input("Start with frame: "))
+        start_frame = int(input("Start with frame: "))
 
         for img_id in tqdm(range(start_frame, len_seq)):
             self.tracking_mode = "Ess. Mat."
