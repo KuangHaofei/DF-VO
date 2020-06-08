@@ -7,8 +7,8 @@ image:
   height: 370
   width: 1226
   ext: png
-seq: "05"
-result_dir: result/tmp/master/05
+seq: "10"
+result_dir: result/tmp/master/10
 
 # ----------------------------------------------------------------------------
 # tracking options
