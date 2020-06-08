@@ -36,7 +36,7 @@ if args.seq is not None:
 cfg.seq = str(cfg.seq)
 
 # Double check result directory
-continue_flag = "y"  # input("Save result in {}? [y/n]".format(cfg.result_dir))
+continue_flag = input("Save result in {}? [y/n]".format(cfg.result_dir))
 if continue_flag == "y":
     mkdir_if_not_exists(cfg.result_dir)
 else:

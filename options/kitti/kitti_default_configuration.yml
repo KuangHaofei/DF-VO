@@ -24,7 +24,7 @@ tracking_method: 3
 compute_2d2d_pose:
   ransac:
     reproj_thre: 0.2
-    repeat: 5
+    repeat: 1
   validity:
     method: homo_ratio
     min_flow: 5 
@@ -33,7 +33,7 @@ PnP:
   ransac:
     iter: 1000
     reproj_thre: 1
-    repeat: 5
+    repeat: 1
   kp_src: kp_best # [kp_list, kp_best]
 
 # translation scale
