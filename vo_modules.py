@@ -883,121 +883,121 @@ class VisualOdometry():
                     hybrid_pose.pose = transformation_from_parameters(
                         axisangle[:, 0], translation[:, 0]).cpu().numpy().reshape(4, 4)
 
-                    hybrid_pose.t = hybrid_pose.t / np.linalg.norm(hybrid_pose.t)
+                    # hybrid_pose.t = hybrid_pose.t / np.linalg.norm(hybrid_pose.t)
 
                 # step 2: optimization R, t: minimize reprojection error
-                def correspondences_3d(x_cur, depth_ref, depth_cur, R, t, K):
-                    """fit function: reprojection from cur image plane to ref image plane
-                    Args:
-                        x_cur (Nx2 array): all pixels of cur
-                        depth_ref (WxH array): depth map of ref
-                        depth_cur (WxH array): depth map of cur
-                        R (3x3 array): rotation from cur to ref
-                        t (3x1 array): translation form cur to ref
-                        K (Intrinsics): camera intrinsic
-                    Returns:
-                        X_ref (Mx2 array): all 3D correspondences of ref
-                        X_cur (Mx2 array): all 3D correspondences of cur
-                        depth_ref (M array)
-                    """
-                    width, height = depth_ref.shape
-
-                    # ref X
-                    x_cur = np.c_[x_cur, np.ones(x_cur.shape[0])]
-                    X_cur = np.dot(K.inv_mat, x_cur.T)
-                    X_ref_reproj = np.dot(R, X_cur) + t
-
-                    # ref x
-                    x_ref_reproj = np.dot(K.mat, X_ref_reproj)
-                    x_ref_reproj = x_ref_reproj / x_ref_reproj[2]
-                    x_ref_reproj = np.int32(x_ref_reproj.T)
-
-                    mask_u_left = (x_ref_reproj[:, 0] >= 0)
-                    mask_u_right = (x_ref_reproj[:, 0] < width)
-                    mask_v_left = (x_ref_reproj[:, 1] >= 0)
-                    mask_v_right = (x_ref_reproj[:, 1] < height)
-                    mask = mask_u_left * mask_u_right * mask_v_left * mask_v_right
-                    x_ref = x_ref_reproj[mask]
-                    x_cur = np.int32(x_cur[mask])
-
-                    d_ref = depth_ref[x_ref[:, 0], x_ref[:, 1]]
-                    d_cur = depth_cur[x_cur[:, 0], x_cur[:, 1]]
-                    non_zero_mask = (d_ref != 0)
-                    depth_range_mask = (d_ref < self.cfg.depth.max_depth) * (d_ref > self.cfg.depth.min_depth)
-                    valid_kp_mask_ref = non_zero_mask * depth_range_mask
-
-                    non_zero_mask = (d_cur != 0)
-                    depth_range_mask = (d_cur < self.cfg.depth.max_depth) * (d_cur > self.cfg.depth.min_depth)
-                    valid_kp_mask_cur = non_zero_mask * depth_range_mask
-
-                    valid_kp_mask = valid_kp_mask_ref * valid_kp_mask_cur
-
-                    x_ref = x_ref[valid_kp_mask]
-                    x_cur = x_cur[valid_kp_mask]
-                    d_ref = d_ref[valid_kp_mask]
-                    d_cur = d_cur[valid_kp_mask]
-
-                    # downsample
-                    samples = random.sample(range(x_cur.shape[0]), 2000)
-                    d_ref = d_ref[samples]
-                    d_cur = d_cur[samples]
-                    X_ref = np.dot(K.inv_mat, x_ref[samples].T).T
-                    X_cur = np.dot(K.inv_mat, x_cur[samples].T).T
-
-                    return X_ref, X_cur, d_ref, d_cur
-
-                def residual_func(params, x_cur, depth_ref, depth_cur, K):
-                    R, _ = cv2.Rodrigues(params[:3].reshape(3, 1))
-                    t = params[3:].reshape(3, 1)
-
-                    # generate 3D correspondences
-                    X_ref, X_cur, depth_ref, depth_cur = \
-                        correspondences_3d(x_cur, depth_ref, depth_cur, R, t, K)
-
-                    # reprojection error
-                    X1 = X_ref.T * depth_ref
-                    X2 = (np.dot(R, X_cur.T * depth_cur) + t)
-
-                    residual = np.linalg.norm(X1 - X2, axis=0)
-
-                    return residual.ravel()
-
-                # raw img to grayscale
-                img_ref = cv2.cvtColor(img_ref, cv2.COLOR_RGB2GRAY)
-                img_cur = cv2.cvtColor(img_cur, cv2.COLOR_RGB2GRAY)
-                img_ref = img_ref.T
-                img_cur = img_cur.T
-                depth_ref = depth_ref.T
-                depth_cur = depth_cur.T
-
-                # generate x_cur
-                x_cur = np.array(np.where(img_cur)).T
-                x_ref = np.array(np.where(img_ref)).T
-
-                R = hybrid_pose.R
-                rvec, _ = cv2.Rodrigues(R)
-                t = hybrid_pose.t
-
-                # R, t
-                params_init = [rvec, t]
-                params_init = np.array(params_init).ravel()
-
-                # generate 3D correspondences
-                # X_ref, X_cur, depth_ref, depth_cur = \
-                #     correspondences_3d(x_cur, depth_ref, depth_cur, R, t, self.cam_intrinsics)
-
-                # optimization
-                tic = time()
-                res = least_squares(residual_func, x0=params_init, loss='soft_l1', f_scale=0.1, verbose=2,
-                                    args=(x_cur, depth_ref, depth_cur, self.cam_intrinsics))
-                print(time() - tic)
-                result = res.x
-
-                R, _ = cv2.Rodrigues(result[:3].reshape(3, 1))
-                t = result[3:].reshape(3, 1)
-
-                hybrid_pose.R = R
-                hybrid_pose.t = t
+                # def correspondences_3d(x_cur, depth_ref, depth_cur, R, t, K):
+                #     """fit function: reprojection from cur image plane to ref image plane
+                #     Args:
+                #         x_cur (Nx2 array): all pixels of cur
+                #         depth_ref (WxH array): depth map of ref
+                #         depth_cur (WxH array): depth map of cur
+                #         R (3x3 array): rotation from cur to ref
+                #         t (3x1 array): translation form cur to ref
+                #         K (Intrinsics): camera intrinsic
+                #     Returns:
+                #         X_ref (Mx2 array): all 3D correspondences of ref
+                #         X_cur (Mx2 array): all 3D correspondences of cur
+                #         depth_ref (M array)
+                #     """
+                #     width, height = depth_ref.shape
+                #
+                #     # ref X
+                #     x_cur = np.c_[x_cur, np.ones(x_cur.shape[0])]
+                #     X_cur = np.dot(K.inv_mat, x_cur.T)
+                #     X_ref_reproj = np.dot(R, X_cur) + t
+                #
+                #     # ref x
+                #     x_ref_reproj = np.dot(K.mat, X_ref_reproj)
+                #     x_ref_reproj = x_ref_reproj / x_ref_reproj[2]
+                #     x_ref_reproj = np.int32(x_ref_reproj.T)
+                #
+                #     mask_u_left = (x_ref_reproj[:, 0] >= 0)
+                #     mask_u_right = (x_ref_reproj[:, 0] < width)
+                #     mask_v_left = (x_ref_reproj[:, 1] >= 0)
+                #     mask_v_right = (x_ref_reproj[:, 1] < height)
+                #     mask = mask_u_left * mask_u_right * mask_v_left * mask_v_right
+                #     x_ref = x_ref_reproj[mask]
+                #     x_cur = np.int32(x_cur[mask])
+                #
+                #     d_ref = depth_ref[x_ref[:, 0], x_ref[:, 1]]
+                #     d_cur = depth_cur[x_cur[:, 0], x_cur[:, 1]]
+                #     non_zero_mask = (d_ref != 0)
+                #     depth_range_mask = (d_ref < self.cfg.depth.max_depth) * (d_ref > self.cfg.depth.min_depth)
+                #     valid_kp_mask_ref = non_zero_mask * depth_range_mask
+                #
+                #     non_zero_mask = (d_cur != 0)
+                #     depth_range_mask = (d_cur < self.cfg.depth.max_depth) * (d_cur > self.cfg.depth.min_depth)
+                #     valid_kp_mask_cur = non_zero_mask * depth_range_mask
+                #
+                #     valid_kp_mask = valid_kp_mask_ref * valid_kp_mask_cur
+                #
+                #     x_ref = x_ref[valid_kp_mask]
+                #     x_cur = x_cur[valid_kp_mask]
+                #     d_ref = d_ref[valid_kp_mask]
+                #     d_cur = d_cur[valid_kp_mask]
+                #
+                #     # downsample
+                #     samples = random.sample(range(x_cur.shape[0]), 2000)
+                #     d_ref = d_ref[samples]
+                #     d_cur = d_cur[samples]
+                #     X_ref = np.dot(K.inv_mat, x_ref[samples].T).T
+                #     X_cur = np.dot(K.inv_mat, x_cur[samples].T).T
+                #
+                #     return X_ref, X_cur, d_ref, d_cur
+                #
+                # def residual_func(params, x_cur, depth_ref, depth_cur, K):
+                #     R, _ = cv2.Rodrigues(params[:3].reshape(3, 1))
+                #     t = params[3:].reshape(3, 1)
+                #
+                #     # generate 3D correspondences
+                #     X_ref, X_cur, depth_ref, depth_cur = \
+                #         correspondences_3d(x_cur, depth_ref, depth_cur, R, t, K)
+                #
+                #     # reprojection error
+                #     X1 = X_ref.T * depth_ref
+                #     X2 = (np.dot(R, X_cur.T * depth_cur) + t)
+                #
+                #     residual = np.linalg.norm(X1 - X2, axis=0)
+                #
+                #     return residual.ravel()
+                #
+                # # raw img to grayscale
+                # img_ref = cv2.cvtColor(img_ref, cv2.COLOR_RGB2GRAY)
+                # img_cur = cv2.cvtColor(img_cur, cv2.COLOR_RGB2GRAY)
+                # img_ref = img_ref.T
+                # img_cur = img_cur.T
+                # depth_ref = depth_ref.T
+                # depth_cur = depth_cur.T
+                #
+                # # generate x_cur
+                # x_cur = np.array(np.where(img_cur)).T
+                # x_ref = np.array(np.where(img_ref)).T
+                #
+                # R = hybrid_pose.R
+                # rvec, _ = cv2.Rodrigues(R)
+                # t = hybrid_pose.t
+                #
+                # # R, t
+                # params_init = [rvec, t]
+                # params_init = np.array(params_init).ravel()
+                #
+                # # generate 3D correspondences
+                # # X_ref, X_cur, depth_ref, depth_cur = \
+                # #     correspondences_3d(x_cur, depth_ref, depth_cur, R, t, self.cam_intrinsics)
+                #
+                # # optimization
+                # tic = time()
+                # res = least_squares(residual_func, x0=params_init, loss='soft_l1', f_scale=0.1, verbose=2,
+                #                     args=(x_cur, depth_ref, depth_cur, self.cam_intrinsics))
+                # print(time() - tic)
+                # result = res.x
+                #
+                # R, _ = cv2.Rodrigues(result[:3].reshape(3, 1))
+                # t = result[3:].reshape(3, 1)
+                #
+                # hybrid_pose.R = R
+                # hybrid_pose.t = t
                 self.ref_data['pose'][ref_id] = copy.deepcopy(hybrid_pose)
             # step 3: update global pose and cur_data['pose']
             pose = self.ref_data['pose'][self.ref_data['id'][-1]]
