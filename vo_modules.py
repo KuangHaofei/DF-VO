@@ -56,7 +56,7 @@ class VisualOdometry():
                          "Depth-CNN",
                          "tracking",
                          "Ess. Mat.",
-                         "Flow-CNN",
+                         "SIFT",
                          "visualization",
                          "visualization_traj",
                          "visualization_match",
@@ -496,6 +496,8 @@ class VisualOdometry():
                             prob=0.99,
                             threshold=self.cfg.compute_2d2d_pose.ransac.reproj_thre,
                             )
+                # print("Ess : ", time() - start_time)
+                # tic = time()
                 # check homography inlier ratio
                 if valid_cfg.method == "homo_ratio":
                     # Find homography
@@ -506,12 +508,15 @@ class VisualOdometry():
                                 confidence=0.99,
                                 ransacReprojThreshold=0.2,
                                 )
+                    # print("homo : ", time()-tic)
                     H_inliers_ratio = H_inliers.sum()/(H_inliers.sum()+inliers.sum())
                     valid_case = H_inliers_ratio < 0.25
                 if valid_case:
+                    # tic = time()
                     cheirality_cnt, R, t, _ = cv2.recoverPose(E, new_kp_cur, new_kp_ref,
                                             focal=self.cam_intrinsics.fx,
                                             pp=principal_points,)
+                    # print("pose: ", time() - tic)
                     self.timers.timers["Ess. Mat."].append(time()-start_time)
                     # check best inlier cnt
                     if valid_cfg.method == "flow+chei":
@@ -784,7 +789,7 @@ class VisualOdometry():
                     self.cur_data['img'], self.ref_data['img'][ref_id])
                 self.cur_data['kp_best'] = pts_cur.astype(np.float)
                 self.ref_data['kp_best'][ref_id] = pts_ref.astype(np.float)
-            self.timers.timers['Flow-CNN'].append(time()-start_time)
+            self.timers.timers['SIFT'].append(time()-start_time)
             # print('features: ', time() - start_time)
 
             for ref_id in self.ref_data['id']:
